@@ -74,7 +74,7 @@ backups untrustworthy, so anything omitted is named.
 | `claude` | Claude Code, its config payload, commands, skills |
 | `secrets` | age, sops, gitleaks, global ignore rules, the encrypted store |
 | `wsl` | systemd, Windows credential symlinks, `.wslconfig` guidance |
-| `optional` | mkcert, d2, visidata, csvkit — and, opt-in, apache + adminer |
+| `optional` | mkcert, d2, visidata, csvkit, Playwright deps — and, opt-in, apache + adminer |
 
 `--all` runs everything except `optional`.
 

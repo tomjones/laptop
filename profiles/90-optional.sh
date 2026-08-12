@@ -45,6 +45,49 @@ fi
 step "optional: csvkit / data CLI"
 if pkg_install csvkit pgloader; then mark_ok "optional: csvkit, pgloader"; else mark_fail "optional: csvkit, pgloader"; fi
 
+# ------------------------------------------------------------- playwright ----
+
+# The browsers themselves are ~450 MB per version and Playwright downloads them
+# on demand, so there is no point backing them up or pre-installing them by
+# default. What DOES break on a fresh machine is the system shared libraries
+# chromium links against — the failure is a wall of "error while loading shared
+# libraries" at first launch, long after you have forgotten this step exists.
+step "optional: playwright system dependencies"
+_pw_node=""
+if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+  _pw_node='. "$HOME/.nvm/nvm.sh" >/dev/null 2>&1;'
+elif ! have npx; then
+  mark_skip "optional: playwright system dependencies" "no node/npx — run the languages profile first"
+fi
+
+if have npx || [[ -n "$_pw_node" ]]; then
+  if [[ "$PKG_FAMILY" != "debian" ]]; then
+    # Upstream only ships a dependency list for Debian/Ubuntu.
+    mark_skip "optional: playwright system dependencies" "only supported on Debian/Ubuntu"
+    note "Playwright: on ${PKG_FAMILY}, install chromium's runtime libraries via your distro's chromium package, then 'npx playwright install chromium'."
+  elif [[ "$DRY_RUN" == "1" ]]; then
+    skip "would run: npx playwright install-deps chromium"
+    mark_skip "optional: playwright system dependencies" "dry run"
+  elif run_sh "${_pw_node} sudo -E env PATH=\"\$PATH\" npx --yes playwright install-deps chromium"; then
+    mark_ok "optional: playwright system dependencies"
+  else
+    mark_fail "optional: playwright system dependencies" "install-deps failed"
+  fi
+fi
+
+step "optional: playwright chromium"
+if [[ "${PLAYWRIGHT_BROWSERS:-0}" != "1" ]]; then
+  mark_skip "optional: playwright chromium" "set PLAYWRIGHT_BROWSERS=1 to pre-download"
+  note "Playwright browsers download on first use into ~/.cache/ms-playwright. They are pinned to the library version, so a project on a newer Playwright fetches its own copy rather than reusing an existing one — that cache only grows. Check it with 'du -sh ~/.cache/ms-playwright/*' and reclaim with 'npx playwright uninstall --all'."
+elif [[ "$DRY_RUN" == "1" ]]; then
+  mark_skip "optional: playwright chromium" "dry run"
+elif run_sh "${_pw_node} npx --yes playwright install chromium"; then
+  mark_ok "optional: playwright chromium"
+else
+  mark_fail "optional: playwright chromium" "download failed"
+fi
+unset _pw_node
+
 # ------------------------------------------------------- apache + adminer ----
 
 step "optional: apache + adminer"

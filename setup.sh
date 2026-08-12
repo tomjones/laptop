@@ -55,7 +55,7 @@ profile_desc() {
     claude)    echo "Claude Code, its config payload, commands, skills, monitor" ;;
     secrets)   echo "age, sops, the secrets store, gitleaks guardrails" ;;
     wsl)       echo "WSL-specific wiring: systemd, Windows symlinks, .wslconfig" ;;
-    optional)  echo "opt-in extras: mkcert, d2, visidata, apache+adminer" ;;
+    optional)  echo "opt-in extras: mkcert, d2, visidata, playwright, apache+adminer" ;;
     *)         echo "" ;;
   esac
 }
