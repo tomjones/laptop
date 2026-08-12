@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: Claude Code, its config payload, commands and skills
 # profiles/60-claude.sh — Claude Code and its surrounding configuration.
 #
 # Often the highest-value layer on a working machine, and the easiest to lose,

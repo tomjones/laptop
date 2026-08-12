@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: PostgreSQL and Redis hardened, plus pgcli and duckdb
 # profiles/40-databases.sh — PostgreSQL and Redis, with hardened defaults.
 #
 # `listen_addresses = '*'` is the single most common self-inflicted database
@@ -159,6 +160,31 @@ else
   systemctl list-unit-files 2>/dev/null | grep -q '^redis-server\.service' || _unit=redis
   if svc_enable "$_unit"; then mark_ok "redis: enabled ($_unit)"; else mark_fail "redis: enable service"; fi
   unset _unit
+fi
+
+# ------------------------------------------------------------ db clients ----
+
+step "db clients: pgcli"
+if want pgcli; then :; else
+  if have pipx; then
+    if run pipx install pgcli; then mark_ok "db clients: pgcli"; else mark_fail "db clients: pgcli"; fi
+  else
+    mark_skip "db clients: pgcli" "pipx not installed — run the languages profile first"
+  fi
+fi
+
+# duckdb is the fastest way to query a CSV, Parquet file, or an existing
+# Postgres table without standing anything up. Single static binary.
+step "db clients: duckdb"
+if want duckdb; then :; else
+  _tag="$(github_latest_tag duckdb/duckdb)"; _tag="${_tag:-v1.1.3}"
+  _arch="$(arch_go)"; [[ "$_arch" == "arm64" ]] && _arch="aarch64"
+  _tmp="$(mktemp -d)"
+  if fetch "https://github.com/duckdb/duckdb/releases/download/${_tag}/duckdb_cli-linux-${_arch}.zip" "$_tmp/duckdb.zip" \
+     && run unzip -qo "$_tmp/duckdb.zip" -d "$_tmp" \
+     && run install -m 0755 "$_tmp/duckdb" "$HOME/.local/bin/duckdb"
+  then mark_ok "db clients: duckdb ${_tag}"; else mark_fail "db clients: duckdb"; fi
+  run rm -rf "$_tmp"; unset _tmp _tag _arch
 fi
 
 # --------------------------------------------------------------- journald ----

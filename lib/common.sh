@@ -102,24 +102,6 @@ run_sh() {
   bash -c "$1"
 }
 
-# write_file <path> <mode> — content on stdin. Skips if content already matches.
-write_file() {
-  local path="$1" mode="${2:-0644}" content
-  content="$(cat)"
-  if [[ -f "$path" ]] && [[ "$(cat "$path" 2>/dev/null)" == "$content" ]]; then
-    return 1   # unchanged
-  fi
-  if [[ "$DRY_RUN" == "1" ]]; then
-    printf '%s  would write:%s %s (%s, %d bytes)\n' \
-      "$C_DIM" "$C_RESET" "$path" "$mode" "${#content}"
-    return 0
-  fi
-  mkdir -p "$(dirname "$path")"
-  printf '%s\n' "$content" > "$path"
-  chmod "$mode" "$path"
-  return 0
-}
-
 # ----------------------------------------------------------- idempotency ----
 
 have()     { command -v "$1" >/dev/null 2>&1; }

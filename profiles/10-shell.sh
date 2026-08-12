@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: bash config, readline tuning, git defaults, the secrets command
 # profiles/10-shell.sh — shell, readline, and git configuration.
 #
 # Manages a marked block inside ~/.bashrc rather than replacing the file, so

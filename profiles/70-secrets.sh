@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: age, sops, gitleaks, and the encrypted secrets store
 # profiles/70-secrets.sh — encrypted secret store, plus guardrails.
 #
 # Design (see "Secrets Management Standard" in Obsidian for the reasoning):

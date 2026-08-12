@@ -64,26 +64,47 @@ backups untrustworthy, so anything omitted is named.
 
 | Profile | Installs |
 |---|---|
-| `core` | build toolchain, native-extension headers, everyday CLI, FIDO2 support |
+| `core` | build toolchain, native-extension headers, FIDO2, ripgrep/fd, tmux, direnv, fzf, bat, delta, yq |
 | `shell` | managed `.bashrc` block, tuned readline, git defaults, the `secrets` command |
 | `languages` | Node via nvm, Python via uv + pyenv, Ruby via rvm, Bun |
 | `docker` | native `docker-ce` and the compose plugin — **not** Docker Desktop |
-| `databases` | PostgreSQL and Redis, bound to loopback with a memory ceiling |
+| `infra` | terraform, packer, ansible, tflint, kubectl, **session-manager-plugin** |
+| `databases` | PostgreSQL and Redis hardened, plus pgcli and duckdb |
 | `cloud` | aws, gh, sf, stripe, heroku, abctl |
+| `salesforce` | JDK for the Apex language server, plus `sf` CLI plugins |
 | `tunnels` | cloudflared, ngrok, tailscale, and the `share` command |
 | `claude` | Claude Code, its config payload, commands, skills |
 | `secrets` | age, sops, gitleaks, global ignore rules, the encrypted store |
 | `wsl` | systemd, Windows credential symlinks, `.wslconfig` guidance |
 | `optional` | mkcert, d2, visidata, csvkit, Playwright deps — and, opt-in, apache + adminer |
 
-`--all` runs everything except `optional`.
+`--all` runs everything except profiles marked opt-in.
 
 ```bash
 ./setup.sh core shell languages   # just these
 ./setup.sh --verify               # what's missing on an existing box; installs nothing
 ```
 
-Version defaults are overridable: `NODE_VERSION=20 ./setup.sh languages`.
+Version defaults are overridable: `NODE_VERSION=20 ./setup.sh languages`,
+`JDK_VERSION=21`, `PG_BIND=localhost`, `REDIS_MAXMEMORY=4gb`.
+
+Every run is logged to `~/.local/state/laptop/setup-<stamp>.log` (ten kept);
+`--no-log` disables it. An `--all` run is several hundred lines, and the detail
+of what was skipped and why is exactly what you need when debugging a partial
+rebuild.
+
+### Two that are easy to overlook
+
+**`session-manager-plugin`** (in `infra`). If your AWS hosts have no sshd and
+you reach them through SSM Session Manager, the AWS CLI accepts
+`aws ssm start-session` without this plugin and then fails at connection time.
+The error does not point at a missing local binary, and on a freshly rebuilt
+machine it means you cannot reach anything.
+
+**A JDK** (in `salesforce`). The Apex Language Server is a Java process. Install
+the Salesforce VS Code extension pack without a JDK and everything looks fine —
+extensions load, syntax highlights — but completion, go-to-definition, and test
+running silently do nothing, with no error naming Java.
 
 ### Distro support
 
@@ -293,8 +314,17 @@ files/                payloads: dotfiles, the secrets and share commands, system
 manifests/            generated inventory (gitignored)
 ```
 
-Adding a profile: drop `NN-name.sh` in `profiles/`, then add its short name to
-`PROFILE_ORDER`, `profile_file()`, and `profile_desc()` in `setup.sh`.
+**Adding a profile is one file.** Drop `NN-name.sh` into `profiles/` — the
+numeric prefix sets run order, everything after it is the name you type, and two
+optional header lines carry the metadata:
+
+```bash
+#!/usr/bin/env bash
+# desc: one line, shown by --list
+# default: no        # omit to include in --all
+```
+
+`setup.sh` discovers it from there. Nothing to register anywhere else.
 
 ## Development
 

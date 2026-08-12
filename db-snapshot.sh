@@ -205,9 +205,13 @@ do_restore() {
     createdb "$target" || die "could not create $target"
   fi
 
-  if pg_restore -d "$target" --clean --if-exists --no-owner --no-privileges "$dump" 2>&1 | grep -vE '^$' | tail -5; then
-    :
-  fi
+  # --clean/--if-exists only makes sense when restoring OVER something. Into a
+  # database we just created it emits DROP errors for objects that never
+  # existed, and "errors ignored on restore" on a clean restore is exactly the
+  # wrong signal from a tool you reach for when something is already wrong.
+  local -a pgr=(--no-owner --no-privileges)
+  ((in_place)) && pgr+=(--clean --if-exists)
+  pg_restore -d "$target" "${pgr[@]}" "$dump" 2>&1 | grep -vE '^$' | tail -5 || true
   # pg_restore returns non-zero on ignorable warnings, so verify by counting tables.
   local tables
   tables="$(psql -d "$target" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')" 2>/dev/null)"

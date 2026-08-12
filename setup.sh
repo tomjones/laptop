@@ -23,46 +23,45 @@ export LAPTOP_DIR
 # shellcheck source=lib/distro.sh
 . "${LAPTOP_DIR}/lib/distro.sh"
 
-# Ordered. Numeric prefixes give the run order; the short name is the CLI handle.
-PROFILE_ORDER=(core shell languages docker databases cloud tunnels claude secrets wsl optional)
+# ------------------------------------------------------ profile discovery ----
+#
+# Profiles are discovered from profiles/NN-name.sh. The numeric prefix sets run
+# order; everything after it is the name you type. Two optional header lines,
+# read from the file itself, keep the metadata next to the code rather than in
+# a table here that drifts out of sync:
+#
+#   # desc: one-line description, shown by --list
+#   # default: no        exclude from --all (opt-in only)
 
-profile_file() {
-  case "$1" in
-    core)      echo "00-core.sh" ;;
-    shell)     echo "10-shell.sh" ;;
-    languages) echo "20-languages.sh" ;;
-    docker)    echo "30-docker.sh" ;;
-    databases) echo "40-databases.sh" ;;
-    cloud)     echo "50-cloud-cli.sh" ;;
-    tunnels)   echo "55-tunnels.sh" ;;
-    claude)    echo "60-claude.sh" ;;
-    secrets)   echo "70-secrets.sh" ;;
-    wsl)       echo "80-wsl.sh" ;;
-    optional)  echo "90-optional.sh" ;;
-    *)         echo "" ;;
-  esac
+declare -a PROFILE_ORDER=()
+declare -A PROFILE_FILE=() PROFILE_DESC=() PROFILE_DEFAULT=()
+
+discover_profiles() {
+  local f base name
+  for f in "${LAPTOP_DIR}"/profiles/[0-9][0-9]-*.sh; do
+    [[ -r "$f" ]] || continue
+    base="$(basename "$f")"
+    name="${base#*-}"; name="${name%.sh}"
+    PROFILE_ORDER+=("$name")
+    PROFILE_FILE[$name]="$f"
+    PROFILE_DESC[$name]="$(sed -n 's/^# desc: //p' "$f" | head -1)"
+    if grep -q '^# default: no' "$f"; then
+      PROFILE_DEFAULT[$name]=0
+    else
+      PROFILE_DEFAULT[$name]=1
+    fi
+  done
 }
 
-profile_desc() {
-  case "$1" in
-    core)      echo "base CLI tools and the build toolchain native extensions need" ;;
-    shell)     echo "bash config, readline tuning, git config, the secrets wrapper" ;;
-    languages) echo "node (nvm), python (pyenv/uv/pipx), ruby (rvm), bun" ;;
-    docker)    echo "native docker-ce engine + compose plugin (not Docker Desktop)" ;;
-    databases) echo "PostgreSQL and Redis, with hardened defaults rather than stock" ;;
-    cloud)     echo "aws, gh, sf, stripe, heroku, abctl" ;;
-    tunnels)   echo "cloudflared, ngrok, tailscale + the 'share' command" ;;
-    claude)    echo "Claude Code, its config payload, commands, skills, monitor" ;;
-    secrets)   echo "age, sops, the secrets store, gitleaks guardrails" ;;
-    wsl)       echo "WSL-specific wiring: systemd, Windows symlinks, .wslconfig" ;;
-    optional)  echo "opt-in extras: mkcert, d2, visidata, playwright, apache+adminer" ;;
-    *)         echo "" ;;
-  esac
-}
+discover_profiles
+((${#PROFILE_ORDER[@]})) || die "no profiles found in ${LAPTOP_DIR}/profiles/"
 
-# Everything except `optional`, which is opt-in by design (it can install a
-# web-served database console — see the Environment Map for why that matters).
-DEFAULT_PROFILES=(core shell languages docker databases cloud tunnels claude secrets wsl)
+default_profiles() {
+  local p
+  for p in "${PROFILE_ORDER[@]}"; do
+    [[ "${PROFILE_DEFAULT[$p]}" == "1" ]] && printf '%s\n' "$p"
+  done
+}
 
 usage() {
   cat <<EOF
@@ -72,17 +71,19 @@ ${C_BOLD}Usage${C_RESET}
   ./setup.sh [options] [profile ...]
 
 ${C_BOLD}Options${C_RESET}
-  --all         run every profile except 'optional'
+  --all         run every profile except opt-in ones
   --dry-run     print every action without performing any of them
   --verify      report which components are missing; install nothing
   --list        list profiles and exit
+  --no-log      do not write a run log
   -h, --help    this message
 
 ${C_BOLD}Profiles${C_RESET}
 EOF
-  local p
+  local p mark
   for p in "${PROFILE_ORDER[@]}"; do
-    printf '  %-11s %s\n' "$p" "$(profile_desc "$p")"
+    mark=""; [[ "${PROFILE_DEFAULT[$p]}" == "0" ]] && mark=" ${C_DIM}(opt-in)${C_RESET}"
+    printf '  %-11s %s%b\n' "$p" "${PROFILE_DESC[$p]}" "$mark"
   done
   cat <<EOF
 
@@ -98,19 +99,19 @@ EOF
 
 declare -a REQUESTED=()
 RUN_ALL=0
+WRITE_LOG=1
 
 while (($#)); do
   case "$1" in
     --all)      RUN_ALL=1 ;;
     --dry-run)  DRY_RUN=1 ;;
     --verify)   VERIFY_ONLY=1; DRY_RUN=1 ;;
+    --no-log)   WRITE_LOG=0 ;;
     --list)     usage; exit 0 ;;
     -h|--help)  usage; exit 0 ;;
     -*)         die "Unknown option: $1  (try --help)" ;;
     *)
-      if [[ -z "$(profile_file "$1")" ]]; then
-        die "Unknown profile: $1  (try --list)"
-      fi
+      [[ -n "${PROFILE_FILE[$1]:-}" ]] || die "Unknown profile: $1  (try --list)"
       REQUESTED+=("$1")
       ;;
   esac
@@ -120,7 +121,7 @@ done
 export DRY_RUN VERIFY_ONLY
 
 if ((RUN_ALL)); then
-  REQUESTED=("${DEFAULT_PROFILES[@]}")
+  mapfile -t REQUESTED < <(default_profiles)
 elif ((${#REQUESTED[@]} == 0)); then
   usage
   exit 0
@@ -134,6 +135,23 @@ for p in "${PROFILE_ORDER[@]}"; do
     [[ "$p" == "$r" ]] && { PROFILES+=("$p"); break; }
   done
 done
+
+# --------------------------------------------------------------- run log ----
+#
+# An --all run produces several hundred lines. Without this, the detail of what
+# was skipped and why scrolls away exactly when you need it to debug a partial
+# rebuild.
+LOG=""
+if ((WRITE_LOG)); then
+  LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/laptop"
+  mkdir -p "$LOG_DIR" 2>/dev/null && LOG="${LOG_DIR}/setup-$(date +%Y%m%dT%H%M%S).log"
+  if [[ -n "$LOG" ]]; then
+    exec > >(tee -a "$LOG") 2>&1
+    # Keep the ten most recent runs.
+    # shellcheck disable=SC2012
+    ls -1t "$LOG_DIR"/setup-*.log 2>/dev/null | tail -n +11 | xargs -r rm -f
+  fi
+fi
 
 # ----------------------------------------------------------------- run it ----
 
@@ -149,6 +167,7 @@ elif [[ "$DRY_RUN" == "1" ]]; then
   printf '  mode   : %sdry run — nothing will be changed%s\n' "$C_YELLOW" "$C_RESET"
 fi
 printf '  profiles: %s\n' "${PROFILES[*]}"
+[[ -n "$LOG" ]] && printf '  log     : %s\n' "$LOG"
 
 if [[ "$SUPPORT_TIER" -eq 3 ]]; then
   warn "Tier 3 distro: package names are mapped best-effort. Unmapped items are skipped and listed at the end."
@@ -160,15 +179,20 @@ if [[ "$DRY_RUN" != "1" ]] && ! sudo_ok; then
 fi
 
 for p in "${PROFILES[@]}"; do
-  f="${LAPTOP_DIR}/profiles/$(profile_file "$p")"
-  if [[ ! -r "$f" ]]; then
-    mark_fail "profile:$p" "missing $f"
-    continue
-  fi
-  heading "[$p] $(profile_desc "$p")"
-  # Subshell-free on purpose: profiles contribute to the shared step accounting.
+  f="${PROFILE_FILE[$p]}"
+  heading "[$p] ${PROFILE_DESC[$p]}"
+  # Sourced, not subshelled, so profiles contribute to the shared accounting.
   # shellcheck source=/dev/null
   . "$f"
 done
 
 summary
+rc=$?
+
+# Let the tee subprocess drain before the shell exits, or the tail of the run
+# can be missing from the log file.
+if [[ -n "$LOG" ]]; then
+  exec 1>&- 2>&-
+  wait 2>/dev/null || true
+fi
+exit "$rc"

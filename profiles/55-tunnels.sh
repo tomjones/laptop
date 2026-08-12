@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: cloudflared, ngrok, tailscale, and the 'share' command
 # profiles/55-tunnels.sh — remote access and link sharing.
 #
 # Three tools, three jobs. Installing only one of them is how you end up using

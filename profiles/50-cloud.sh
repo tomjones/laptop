@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: aws, gh, sf, stripe, heroku, abctl
 # profiles/50-cloud-cli.sh — cloud and SaaS command-line tools.
 #
 # None of these are authenticated by this script. Every one of them prints a

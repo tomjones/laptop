@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: build toolchain, everyday CLI, and shell ergonomics
 # profiles/00-core.sh — base CLI tooling and the build toolchain.
 # shellcheck shell=bash
 
@@ -60,3 +61,46 @@ fi
 
 step "core: shellcheck (for maintaining these scripts)"
 if pkg_install shellcheck; then mark_ok; else mark_fail "" "package install failed"; fi
+
+# ------------------------------------------------------------ ergonomics ----
+
+# tmux earns its place specifically because the alternative people reach for is
+# `nohup ... &`, which orphans the process with no way to reattach and no
+# scrollback when it misbehaves.
+step "core: tmux, direnv, fzf, bat"
+if pkg_install tmux direnv fzf bat; then
+  mark_ok
+  # Debian ships bat as batcat to avoid a name clash with the 'bacula' tools.
+  if have batcat && ! have bat; then
+    run mkdir -p "$HOME/.local/bin"
+    run ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
+  fi
+else
+  mark_fail "" "package install failed"
+fi
+
+step "core: git-delta (better diffs)"
+if want delta; then :; else
+  if pkg_install git-delta; then
+    mark_ok "core: git-delta"
+  else
+    _tag="$(github_latest_tag dandavison/delta)"; _tag="${_tag:-0.18.2}"
+    _tmp="$(mktemp -d)"
+    if fetch "https://github.com/dandavison/delta/releases/download/${_tag}/delta-${_tag}-$(arch_uname)-unknown-linux-gnu.tar.gz" "$_tmp/d.tgz" \
+       && run tar -xzf "$_tmp/d.tgz" -C "$_tmp" --strip-components=1 \
+       && run install -m 0755 "$_tmp/delta" "$HOME/.local/bin/delta"
+    then mark_ok "core: git-delta ${_tag}"; else mark_fail "core: git-delta"; fi
+    run rm -rf "$_tmp"; unset _tmp _tag
+  fi
+fi
+
+# Deliberately the Go yq (mikefarah), not Debian's python3-yq, which is a
+# different tool with a different syntax that happens to share the name.
+step "core: yq (YAML processor)"
+if want yq; then :; else
+  _tag="$(github_latest_tag mikefarah/yq)"; _tag="${_tag:-v4.44.3}"
+  if fetch "https://github.com/mikefarah/yq/releases/download/${_tag}/yq_linux_$(arch_go)" /tmp/yq \
+     && run install -m 0755 /tmp/yq "$HOME/.local/bin/yq"
+  then mark_ok "core: yq ${_tag}"; else mark_fail "core: yq"; fi
+  run rm -f /tmp/yq; unset _tag
+fi

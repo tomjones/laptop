@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: node (nvm), python (uv/pyenv/pipx), ruby (rvm), bun
 # profiles/20-languages.sh — language runtimes and their version managers.
 #
 # Deliberately opinionated about versions. Dev machines accumulate runtimes:

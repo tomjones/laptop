@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# desc: opt-in extras: mkcert, d2, visidata, playwright, adminer
+# default: no
 # profiles/90-optional.sh — opt-in extras. Never part of --all.
 #
 # Split out because one of these (apache + adminer) installs a web-served

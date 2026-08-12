@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: WSL wiring: systemd, Windows symlinks, .wslconfig
 # profiles/80-wsl.sh — WSL-specific wiring. No-ops cleanly on bare metal.
 # shellcheck shell=bash
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# desc: native docker-ce engine + compose plugin (not Docker Desktop)
 # profiles/30-docker.sh — native Docker Engine, not Docker Desktop.
 #
 # Why native rather than Docker Desktop's WSL integration: with Desktop,
