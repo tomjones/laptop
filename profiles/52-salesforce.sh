@@ -25,13 +25,65 @@ else
   mark_fail "salesforce: JDK ${JDK_VERSION}" "package install failed"
 fi
 
-# VS Code needs to be pointed at the JDK explicitly; it does not reliably infer
-# it from PATH, and this is the setting people spend an afternoon on.
-if have java && [[ "$DRY_RUN" != "1" ]]; then
-  _jdk="$(readlink -f "$(command -v javac 2>/dev/null || command -v java)" 2>/dev/null | sed 's|/bin/.*||')"
-  [[ -n "$_jdk" ]] && manual "VS Code: set \"salesforcedx-vscode-apex.java.home\": \"${_jdk}\" in settings.json, or the Apex language server stays silently inert."
+# VS Code does not reliably infer the JDK from PATH, so installing Java is only
+# half the job — the extension needs java.home set explicitly. This is the step
+# people lose an afternoon to, so the script does it rather than telling you to.
+#
+# Machine scope, not User: java.home is a per-machine path, and User settings
+# sync across your other machines where it would be wrong.
+step "salesforce: point VS Code at the JDK"
+_vscode_settings="$HOME/.vscode-server/data/Machine/settings.json"
+if ! have java; then
+  mark_skip "salesforce: VS Code java.home" "no JDK installed"
+elif [[ ! -d "$HOME/.vscode-server" ]]; then
+  mark_skip "salesforce: VS Code java.home" "VS Code Server not present"
+else
+  _jdk="$(readlink -f "$(command -v javac 2>/dev/null || command -v java)" 2>/dev/null | sed 's|/bin/[^/]*$||')"
+  if [[ -z "$_jdk" || ! -d "$_jdk" ]]; then
+    mark_fail "salesforce: VS Code java.home" "could not resolve JAVA_HOME"
+  elif [[ "$DRY_RUN" == "1" ]]; then
+    skip "would set salesforcedx-vscode-apex.java.home = ${_jdk} in ${_vscode_settings}"
+    mark_skip "salesforce: VS Code java.home" "dry run"
+  else
+    mkdir -p "$(dirname "$_vscode_settings")"
+    backup_once "$_vscode_settings"
+    # Merge rather than overwrite; the file may already hold your own settings.
+    # VS Code tolerates comments in settings.json, which json.load does not, so
+    # fall back to leaving the file alone rather than destroying hand edits.
+    if JDK="$_jdk" SETTINGS="$_vscode_settings" python3 - <<'PY'
+import json, os, sys
+p, jdk = os.environ["SETTINGS"], os.environ["JDK"]
+key = "salesforcedx-vscode-apex.java.home"
+data = {}
+if os.path.exists(p) and os.path.getsize(p):
+    try:
+        with open(p) as f:
+            data = json.load(f)
+    except Exception:
+        sys.stderr.write("existing settings.json is not plain JSON (comments?) — not touching it\n")
+        sys.exit(2)
+if data.get(key) == jdk:
+    sys.exit(3)          # already correct
+data[key] = jdk
+with open(p, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+    then
+      mark_ok "salesforce: VS Code java.home = ${_jdk}"
+      manual "Reload the VS Code window (Ctrl+Shift+P, 'Developer: Reload Window') for the Apex language server to pick up the JDK."
+    else
+      case $? in
+        3) mark_skip "salesforce: VS Code java.home" "already correct" ;;
+        2) mark_skip "salesforce: VS Code java.home" "settings.json has comments — set it by hand"
+           manual "Add to ${_vscode_settings}:  \"salesforcedx-vscode-apex.java.home\": \"${_jdk}\"" ;;
+        *) mark_fail "salesforce: VS Code java.home" ;;
+      esac
+    fi
+  fi
   unset _jdk
 fi
+unset _vscode_settings
 
 # ------------------------------------------------------------- sf plugins ----
 
