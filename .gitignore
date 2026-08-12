@@ -1,0 +1,25 @@
+# Generated inventory of the machine this was last run on.
+#
+# `./capture.sh` writes these. They are genuinely useful — they are what tells a
+# rebuild which packages, repos, and databases existed — but they enumerate real
+# hostnames, repository URLs, database names, and open ports for whoever ran it.
+# That belongs in your own private notes, not in a public repository.
+#
+# See manifests/README.md, which IS tracked and explains the format.
+manifests/*
+!manifests/README.md
+
+# Captured Claude Code configuration: your own slash commands, skills, and
+# settings. `capture.sh --payload` writes these. They are yours and are almost
+# always project- or employer-specific.
+files/claude/*
+!files/claude/.gitkeep
+
+# Local backup config — contains destination paths, and possibly a bucket name.
+laptop-backup.conf
+
+# Editor and OS noise
+*.swp
+*~
+.DS_Store
+Thumbs.db

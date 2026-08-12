@@ -1,0 +1,14 @@
+[Unit]
+Description=Hourly PostgreSQL rollback snapshot
+
+[Timer]
+OnCalendar=hourly
+# A laptop is not always awake. Without this, every snapshot due while the
+# machine was asleep is simply skipped, and you discover the gap when you
+# need it. Persistent runs the most recent missed occurrence at boot.
+Persistent=true
+# Avoid every timer on the machine firing at :00 simultaneously.
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

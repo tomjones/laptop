@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# share — publish a local port as a shareable link.
+#
+#   share                     list what is listening locally
+#   share 5173                quick Cloudflare tunnel (random *.trycloudflare.com URL)
+#   share 5173 --ngrok        use ngrok instead
+#   share 5173 --funnel       use Tailscale Funnel (*.ts.net)
+#   share 5173 --name demo    named Cloudflare tunnel on your own domain
+#   share 80 --force          override the refusal list
+#
+# Why the refusal list: a tunnel forwards a port from the public internet
+# straight to this machine, bypassing NAT, the WSL boundary, and any host
+# firewall. Publishing the wrong port does not feel like a mistake at the time —
+# `share 80` on a box serving a database console is a full compromise, delivered
+# in one command. So the obviously-wrong ones are blocked by default.
+
+set -uo pipefail
+
+if [[ -t 1 ]]; then
+  R=$'\033[0m'; B=$'\033[1m'; DIM=$'\033[2m'
+  RED=$'\033[31m'; GRN=$'\033[32m'; YEL=$'\033[33m'; CYN=$'\033[36m'
+else
+  R=""; B=""; DIM=""; RED=""; GRN=""; YEL=""; CYN=""
+fi
+die()  { printf '%s✗%s %s\n' "$RED" "$R" "$*" >&2; exit 1; }
+warn() { printf '%s!%s %s\n' "$YEL" "$R" "$*" >&2; }
+info() { printf '%s→%s %s\n' "$CYN" "$R" "$*"; }
+
+# port : why it must not be published
+declare -A REFUSE=(
+  [22]="SSH — publishing this exposes your shell to credential stuffing"
+  [25]="SMTP — you will be enlisted as a spam relay"
+  [587]="SMTP submission"
+  [80]="plain HTTP — on this machine that has served an unauthenticated Adminer database console"
+  [443]="HTTPS reverse proxy — tunnel the app behind it instead"
+  [3306]="MySQL — never expose a database"
+  [5432]="PostgreSQL — never expose a database"
+  [6379]="Redis — typically unauthenticated on loopback"
+  [27017]="MongoDB — never expose a database"
+  [9090]="Cockpit — a root-capable web console"
+  [7888]="claude-code-monitor — can remotely approve agent tool permissions"
+  [8461]="MTA-STS resolver — internal service"
+  [4330]="PCP pmlogger control port"
+  [44321]="PCP pmcd"
+  [44322]="PCP pmproxy"
+  [44323]="PCP pmproxy REST API — exposes full process command lines"
+)
+
+listeners() {
+  ss -tlnpH 2>/dev/null | awk '{print $4, $6}' | while read -r addr proc; do
+    port="${addr##*:}"
+    [[ "$port" =~ ^[0-9]+$ ]] || continue
+    name="$(sed -E 's/.*users:\(\("([^"]+)".*/\1/' <<<"$proc")"
+    [[ "$name" == "$proc" ]] && name="?"
+    printf '%s\t%s\t%s\n' "$port" "${addr%:*}" "$name"
+  done | sort -un -k1,1 | uniq
+}
+
+do_list() {
+  printf '%sListening locally%s\n\n' "$B" "$R"
+  printf '  %-7s %-18s %-14s %s\n' PORT BIND PROCESS ""
+  local any=0
+  while IFS=$'\t' read -r port bind proc; do
+    any=1
+    local flag=""
+    [[ -n "${REFUSE[$port]:-}" ]] && flag="${RED}do not share${R}"
+    [[ "$bind" == "0.0.0.0" || "$bind" == "[::]" || "$bind" == "*" ]] \
+      && flag="${flag:+$flag, }${YEL}reachable from Windows host${R}"
+    printf '  %-7s %-18s %-14s %b\n' "$port" "$bind" "$proc" "$flag"
+  done < <(listeners)
+  ((any)) || printf '  %s(nothing listening)%s\n' "$DIM" "$R"
+  printf '\n  %sshare <port>%s to publish one.\n' "$DIM" "$R"
+}
+
+PORT=""; METHOD="cloudflared"; NAME=""; FORCE=0
+while (($#)); do
+  case "$1" in
+    --ngrok)     METHOD=ngrok ;;
+    --funnel)    METHOD=funnel ;;
+    --cloudflare|--cf) METHOD=cloudflared ;;
+    --name)      shift; NAME="${1:-}"; METHOD=cloudflared ;;
+    --force)     FORCE=1 ;;
+    -h|--help)   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -l|--list)   do_list; exit 0 ;;
+    [0-9]*)      PORT="$1" ;;
+    *)           die "unknown argument: $1  (try --help)" ;;
+  esac
+  shift
+done
+
+[[ -z "$PORT" ]] && { do_list; exit 0; }
+[[ "$PORT" =~ ^[0-9]+$ ]] || die "not a port: $PORT"
+
+# --- refusal list --------------------------------------------------------
+if [[ -n "${REFUSE[$PORT]:-}" ]] && ((!FORCE)); then
+  printf '%s✗ Refusing to publish port %s%s\n' "$RED" "$PORT" "$R" >&2
+  printf '  %s\n\n' "${REFUSE[$PORT]}" >&2
+  printf '  If you are certain, re-run with %s--force%s.\n' "$B" "$R" >&2
+  exit 1
+fi
+[[ -n "${REFUSE[$PORT]:-}" ]] && ((FORCE)) \
+  && warn "Publishing port $PORT anyway: ${REFUSE[$PORT]}"
+
+# --- sanity: is anything actually there? ---------------------------------
+if ! listeners | cut -f1 | grep -qx "$PORT"; then
+  warn "Nothing is listening on port $PORT. Start your app first, or the link will 502."
+fi
+
+# --- dev-auth guard ------------------------------------------------------
+# Cheap check for the specific footgun this environment already contains: a
+# service started with an auth-bypass flag, then exposed publicly.
+_pid="$(ss -tlnpH 2>/dev/null | grep -oP "(?<=:)$PORT\s.*pid=\K[0-9]+" | head -1)"
+if [[ -n "$_pid" ]] && tr '\0' '\n' < "/proc/$_pid/environ" 2>/dev/null \
+     | grep -qiE '^(.*DEV_AUTH|.*AUTH_BYPASS|.*DISABLE_AUTH|.*SKIP_AUTH)=(1|true)$'; then
+  warn "The process on port $PORT was started with an auth-bypass environment variable set."
+  warn "Publishing it exposes those bypass routes to the internet."
+  ((FORCE)) || die "Refusing. Restart the service without the bypass flag, or pass --force."
+fi
+
+# --- go ------------------------------------------------------------------
+case "$METHOD" in
+  cloudflared)
+    command -v cloudflared >/dev/null || die "cloudflared not installed. Run: ~/laptop/setup.sh tunnels"
+    if [[ -n "$NAME" ]]; then
+      info "Named Cloudflare tunnel '$NAME' -> localhost:$PORT"
+      info "Requires 'cloudflared tunnel login' and a DNS route for this name."
+      exec cloudflared tunnel run --url "http://localhost:$PORT" "$NAME"
+    fi
+    info "Quick Cloudflare tunnel -> localhost:$PORT"
+    info "Random URL, no account needed. Ctrl-C to stop."
+    printf '  %sFor a stable link on your own domain: share %s --name <name>%s\n\n' "$DIM" "$PORT" "$R"
+    exec cloudflared tunnel --url "http://localhost:$PORT"
+    ;;
+  ngrok)
+    command -v ngrok >/dev/null || die "ngrok not installed. Run: ~/laptop/setup.sh tunnels"
+    info "ngrok -> localhost:$PORT"
+    printf '  %sFree tier: random URL, changes each restart, shows an interstitial page.%s\n\n' "$DIM" "$R"
+    exec ngrok http "$PORT"
+    ;;
+  funnel)
+    command -v tailscale >/dev/null || die "tailscale not installed. Run: ~/laptop/setup.sh tunnels"
+    info "Tailscale Funnel -> localhost:$PORT"
+    printf '  %sPublic *.ts.net URL. Drop --funnel to keep it tailnet-only instead.%s\n\n' "$DIM" "$R"
+    exec tailscale funnel "$PORT"
+    ;;
+esac

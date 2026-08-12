@@ -1,0 +1,44 @@
+# ~/.inputrc - readline configuration
+#
+# NOTE: readline reads EITHER ~/.inputrc OR /etc/inputrc, never both.
+# The include below keeps Debian's system defaults (Home/End, Delete/Insert,
+# Ctrl+Left/Right word movement, 8-bit clean I/O). Keep it first so the
+# settings underneath win.
+$include /etc/inputrc
+
+# --- completion display ---------------------------------------------------
+
+# One Tab lists the candidates instead of two.
+set show-all-if-ambiguous on
+
+# Insert the longest common prefix before cycling, so Tab still behaves
+# normally when there IS an unambiguous prefix to complete.
+set menu-complete-display-prefix on
+
+# Colorize candidates by file type, and highlight the matched prefix.
+set colored-stats on
+set colored-completion-prefix on
+
+# Tab-complete without regard to case.
+set completion-ignore-case on
+
+# Treat - and _ as equivalent while completing.
+set completion-map-case on
+
+# Append / to completed symlinks-to-directories, not just real dirs.
+set mark-symlinked-directories on
+
+# Don't stop to ask "Display all 143 possibilities?" until it's genuinely a lot.
+set completion-query-items 200
+
+# Don't page long candidate lists through an internal pager.
+set page-completions off
+
+# menu-complete rings the bell on every cycle. Silence it.
+set bell-style none
+
+# --- key bindings ---------------------------------------------------------
+
+# Tab cycles forward through candidates, Shift-Tab cycles backward.
+"\t": menu-complete
+"\e[Z": menu-complete-backward

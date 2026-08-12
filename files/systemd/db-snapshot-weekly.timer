@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly PostgreSQL snapshot including connection-locked databases
+
+[Timer]
+# Sunday 03:00. The weekly run briefly unlocks any database with
+# datallowconn=false to dump it, so it deliberately does not run hourly.
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=PostgreSQL rollback snapshot
+# Do not bother trying before the cluster is up; the timer will catch the
+# next occurrence rather than recording a spurious failure.
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/laptop/db-snapshot.sh
+Nice=10
+IOSchedulingClass=idle
+# Snapshots are worth almost nothing if they interfere with the work you are
+# doing. Deprioritised on both CPU and disk.
